@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: mart_deal_scores
+    description: >
+      Every live price snapshot scored against its route's historical baseline.
+      deal_score > 0 means cheaper than median. >= 0.15 flags as a deal.
+    columns:
+      - name: snapshot_id
+        description: "PK — one row per Amadeus price snapshot"
+        tests:
+          - not_null
+          - unique
+      - name: deal_score
+        description: "(baseline_median - price) / baseline_median. Positive = deal."
+        tests:
+          - not_null

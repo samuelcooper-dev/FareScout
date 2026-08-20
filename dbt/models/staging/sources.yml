@@ -1,0 +1,34 @@
+version: 2
+
+sources:
+  - name: raw
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
+    schema: raw
+    tables:
+      - name: fares_historical
+        description: "DOT DB1B quarterly fare data loaded by dot_fares.py"
+        columns:
+          - name: year
+          - name: quarter
+          - name: origin
+          - name: dest
+          - name: airline_id
+          - name: carrier
+          - name: mkt_fare_usd
+          - name: passengers
+          - name: distance_miles
+          - name: loaded_at
+
+      - name: price_snapshots
+        description: "Amadeus live price snapshots loaded by amadeus_poller.py"
+        columns:
+          - name: snapshot_id
+          - name: polled_at
+          - name: origin
+          - name: dest
+          - name: carrier
+          - name: cabin_class
+          - name: price_usd
+          - name: seats_remaining
+          - name: departure_date
+          - name: days_to_departure

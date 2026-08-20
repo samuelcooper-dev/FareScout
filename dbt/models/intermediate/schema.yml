@@ -1,0 +1,11 @@
+version: 2
+
+models:
+  - name: int_route_baselines
+    description: "Seasonal fare baselines (median, p25, p75) per route from DOT data."
+    columns:
+      - name: baseline_id
+        description: "Surrogate PK: route_origin + route_dest + quarter_bucket"
+        tests:
+          - not_null
+          - unique

@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: stg_fares_historical
+    description: "Cleaned DOT DB1B fare records with normalised route direction."
+    columns:
+      - name: fare_id
+        description: "Surrogate PK: year + quarter + route + carrier"
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_price_snapshots
+    description: "Cleaned Amadeus live price snapshots."
+    columns:
+      - name: snapshot_id
+        tests:
+          - not_null
+          - unique
