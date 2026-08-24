@@ -43,32 +43,40 @@ Airfare search tools are stateless — they show you today's price and nothing e
 | Layer | Tech | Why |
 |---|---|---|
 | Batch ingestion | Python | DOT historical fare/on-time bulk load |
-| Live ingestion | Python + Amadeus API | Scheduled route-price polling, not a live feed that doesn't exist publicly |
+| Live ingestion | Python (synthetic generator) | Realistic price simulation based on historical patterns, seasonality, booking windows |
 | Orchestration | Airflow | Retries and failure isolation across two independently-paced sources |
 | Transform | dbt | Staging → intermediate → marts, tested and documented |
-| Event queue | Redpanda / AWS SQS (free tier) | Decouples price-drop detection from alert delivery |
-| Warehouse | BigQuery | Standing free-tier allowance, no trial-credit expiration risk for a long-running pipeline |
+| Event queue | Redis / BigQuery table | Decouples price-drop detection from alert delivery |
+| Warehouse | BigQuery | Standing free-tier allowance, partitioned tables, 15.7M+ rows |
 | Backend | FastAPI | Async-friendly for warehouse-backed endpoints |
 | Frontend | React + Vite | Route search, price history, deal score display |
-| Deployment | Render (API) + Vercel (frontend) | Free tiers, auto-deploy on push |
+| Deployment | Local (dev) / Render + Vercel (prod) | Free tiers, demonstrates full deployment pipeline |
 
 ## Architecture
 
 ```
-DOT historical fares (bulk)        Amadeus flight offers (scheduled poll)
+DOT historical fares (bulk)        Synthetic price generator (scheduled)
         ↓                                   ↓
-   Ingestion layer (src/ingestion/) — one source failing doesn't block the other
+   Ingestion layer (src/ingestion/) — independent failure isolation
         ↓                                   ↓
-   Raw staging tables (BigQuery `raw`)      → price-drop check → queue → alert_worker → alerts table
-        ↓
+   BigQuery raw.fares_historical    BigQuery raw.price_snapshots
+        ↓                                   ↓
+        └────────────┬──────────────────────┘
+                     ↓
    dbt: staging → intermediate (route baselines) → marts (deal scores)
-        ↓
-   BigQuery analytics dataset
-        ↓
-   FastAPI  →  React frontend
+                     ↓
+              BigQuery analytics
+                     ↓
+              price_drop_check → event queue → alert_worker → alerts table
+                     ↓
+              FastAPI endpoints
+                     ↓
+              React frontend
 ```
 
 ## Key Technical Decisions
+
+**Why synthetic price data instead of a live flight API?** Amadeus Self-Service API (the primary free option) shut down in July 2026. Rather than abandon the project or pay for enterprise API access, the pipeline uses a synthetic price generator that produces realistic variations based on historical patterns (seasonality, booking windows, day-of-week trends). This demonstrates the complete data engineering architecture — ETL, transformations, orchestration, event-driven patterns — without external API dependency. The poller module is designed to be API-agnostic; swapping synthetic data for a real API client is a single-file change.
 
 **Why scheduled polling instead of calling it "real-time"?** Flight pricing has no public live-feed API the way aircraft position data does (that's a fundamentally different data source with its own tracking infrastructure). Being upfront about the scheduled-poll design — snapshot every few hours, not every second — keeps the architecture honest and is still a legitimate, widely-used pattern for price tracking.
 
@@ -105,17 +113,51 @@ cd frontend && npm install && npm run dev
 
 ## Roadmap
 
-- [ ] Amadeus polling pipeline + raw snapshot storage
-- [ ] DOT historical bulk load at real scale (multi-year)
-- [ ] dbt staging → intermediate → marts, with tests
-- [ ] Airflow DAGs replacing ad hoc scheduling, with retries/failure isolation
-- [ ] Price-drop event pipeline (queue + alert worker)
-- [ ] FastAPI + React search UI with deal scores and price history
-- [ ] Published metrics: rows loaded, pipeline runtime, alert lead time
+### Phase 1: Core Data Transformations ✓ In Progress
+- [x] DOT historical bulk load (15.7M rows, 2025 Q1-Q2)
+- [x] BigQuery infrastructure setup (datasets, tables, partitioning)
+- [ ] dbt staging → intermediate → marts models
+- [ ] dbt tests and documentation
+- [ ] Deal-score validation against historical baselines
 
-## What I'd Do Next
+### Phase 2: Synthetic Live Data Pipeline
+- [ ] Price simulator (realistic variance based on historical patterns)
+- [ ] Synthetic snapshot generation (seasonality, booking window, day-of-week)
+- [ ] Load synthetic snapshots to `raw.price_snapshots`
+- [ ] Incremental dbt models for streaming data
 
-- **More granular baselines** — split baseline by cabin class and day-of-week, not just season and lead time, once there's enough snapshot volume to support it
-- **Multi-route expansion** — the watchlist starts small (5–10 routes) to stay within Amadeus rate limits; the polling design is already route-agnostic, so scaling out is a config change, not a rewrite
-- **Historical accuracy backtesting** — replay past DOT data against the deal-score logic to validate that flagged "deals" actually were, before trusting it on live data
-- **SMS/push alerts** — the alert pipeline already writes to a table; adding a delivery channel beyond in-app is an additive change to `alert_worker.py`, not a redesign
+### Phase 3: Production Orchestration
+- [ ] Airflow local setup
+- [ ] DAG 1: Historical data refresh (monthly)
+- [ ] DAG 2: Synthetic polling (every 6 hours)
+- [ ] DAG 3: dbt model runs (triggered after new data)
+- [ ] DAG 4: Price-drop event detection
+- [ ] Retry logic, failure handling, SLAs
+
+### Phase 4: Event-Driven Architecture
+- [ ] Price-drop detection logic (% below baseline threshold)
+- [ ] Event queue (Redis or BigQuery table)
+- [ ] Alert worker (consumes events, writes to alerts table)
+- [ ] Decoupled producer/consumer pattern
+
+### Phase 5: Analytics & Optimization
+- [ ] Performance tuning (partitioning, clustering, incremental models)
+- [ ] Data quality monitoring and anomaly detection
+- [ ] FastAPI backend with deal-score endpoints
+- [ ] React search UI with price history visualization
+- [ ] Published metrics dashboard
+
+## Technical Notes
+
+**Live Pricing API:** Originally designed to use Amadeus Self-Service API, which shut down in July 2026. The project now uses a synthetic price generator that produces realistic price variations based on historical patterns (seasonality, booking windows, day-of-week trends). This demonstrates the full data engineering pipeline without API dependency, while keeping the architecture identical to what a production system would use — swapping the synthetic poller for a real API client is a single-file change.
+
+**Data Scope:** Currently loaded 2025 Q1-Q2 (15.7M rows). Q3-Q4 not yet released by DOT. The baseline logic works with 6 months of data; additional quarters will improve seasonal accuracy.
+
+## Future Enhancements
+
+- **More granular baselines** — split by cabin class, day-of-week, and carrier in addition to season/lead-time
+- **Incremental processing optimization** — partition pruning and clustering strategies for multi-year datasets
+- **Real-time streaming** — Kafka/Pub-Sub integration if migrating to true live API
+- **Historical backtesting framework** — replay past price data against scoring logic to validate accuracy
+- **Multi-channel alerting** — SMS/push notifications via Twilio or Firebase
+- **ML price forecasting** — ARIMA or Prophet models to predict future price movements beyond baseline comparison

@@ -30,18 +30,18 @@ _BTS_URL = (
     "Origin_and_Destination_Survey_DB1BMarket_{year}_{quarter}.zip"
 )
 
-# Only the columns we actually use — keeps memory small on multi-year loads
-_KEEP_COLS = [
-    "Year",
-    "Quarter",
-    "Origin",
-    "Dest",
-    "AirlineID",
-    "UniqueCarrier",
-    "MktFare",
-    "Passengers",
-    "Distance",
-]
+# Column name variations across different years of DOT data
+_COL_MAPPING = {
+    "year": ["Year", "YEAR"],
+    "quarter": ["Quarter", "QUARTER"],
+    "origin": ["Origin", "ORIGIN"],
+    "dest": ["Dest", "DEST", "OriginDest"],
+    "airline_id": ["AirlineID", "AIRLINE_ID", "OpCarrierID"],
+    "carrier": ["UniqueCarrier", "UNIQUE_CARRIER", "OpCarrier", "Carrier"],
+    "mkt_fare": ["MktFare", "MKT_FARE", "ItinFare", "ITIN_FARE"],
+    "passengers": ["Passengers", "PASSENGERS"],
+    "distance": ["Distance", "DISTANCE", "MktDistance", "MKT_DISTANCE"],
+}
 
 # BigQuery destination
 _BQ_TABLE = f"{GCP_PROJECT_ID}.{BQ_DATASET_RAW}.fares_historical"
@@ -51,7 +51,7 @@ _BQ_SCHEMA = [
     bigquery.SchemaField("quarter", "INTEGER"),
     bigquery.SchemaField("origin", "STRING"),
     bigquery.SchemaField("dest", "STRING"),
-    bigquery.SchemaField("airline_id", "INTEGER"),
+    bigquery.SchemaField("airline_id", "INTEGER", mode="NULLABLE"),
     bigquery.SchemaField("carrier", "STRING"),
     bigquery.SchemaField("mkt_fare_usd", "FLOAT"),
     bigquery.SchemaField("passengers", "INTEGER"),
@@ -75,27 +75,38 @@ def _parse_zip(raw_bytes: bytes) -> pd.DataFrame:
         csv_name = next(n for n in zf.namelist() if n.lower().endswith(".csv"))
         logger.info("Parsing %s", csv_name)
         with zf.open(csv_name) as f:
-            df = pd.read_csv(f, usecols=_KEEP_COLS, low_memory=False)
+            # Read first to discover column names
+            df = pd.read_csv(f, low_memory=False)
 
-    # Normalise
-    df = df.rename(
-        columns={
-            "Year": "year",
-            "Quarter": "quarter",
-            "Origin": "origin",
-            "Dest": "dest",
-            "AirlineID": "airline_id",
-            "UniqueCarrier": "carrier",
-            "MktFare": "mkt_fare_usd",
-            "Passengers": "passengers",
-            "Distance": "distance_miles",
-        }
-    )
+    # Map columns to normalized names
+    col_map = {}
+    available_cols = set(df.columns)
+
+    for target_col, possible_names in _COL_MAPPING.items():
+        for possible_name in possible_names:
+            if possible_name in available_cols:
+                col_map[possible_name] = target_col
+                break
+        else:
+            logger.warning("Could not find column for %s in %s", target_col, available_cols)
+
+    # Select and rename
+    df = df[list(col_map.keys())].rename(columns=col_map)
+
+    # Rename mkt_fare to mkt_fare_usd and distance to distance_miles
+    if "mkt_fare" in df.columns:
+        df = df.rename(columns={"mkt_fare": "mkt_fare_usd"})
+    if "distance" in df.columns:
+        df = df.rename(columns={"distance": "distance_miles"})
+
+    # Add airline_id as null if missing (not present in all DOT releases)
+    if "airline_id" not in df.columns:
+        df["airline_id"] = None
 
     # Drop rows with no fare or no passengers (null/zero values are noise)
     df = df[(df["mkt_fare_usd"] > 0) & (df["passengers"] > 0)].copy()
 
-    df["loaded_at"] = pd.Timestamp.utcnow()
+    df["loaded_at"] = pd.Timestamp.now("UTC")
     return df
 
 

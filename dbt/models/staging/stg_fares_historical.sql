@@ -26,9 +26,25 @@ cleaned as (
         and origin is not null
         and dest    is not null
         and origin != dest
+),
+
+numbered as (
+    select
+        *,
+        row_number() over (partition by year, quarter, route_origin, route_dest, carrier order by fare_usd) as row_num
+    from cleaned
 )
 
 select
-    {{ dbt_utils.generate_surrogate_key(['year', 'quarter', 'route_origin', 'route_dest', 'carrier']) }} as fare_id,
-    *
-from cleaned
+    {{ dbt_utils.generate_surrogate_key(['year', 'quarter', 'route_origin', 'route_dest', 'carrier', 'row_num']) }} as fare_id,
+    year,
+    quarter,
+    route_origin,
+    route_dest,
+    airline_id,
+    carrier,
+    fare_usd,
+    passengers,
+    distance_miles,
+    loaded_at
+from numbered

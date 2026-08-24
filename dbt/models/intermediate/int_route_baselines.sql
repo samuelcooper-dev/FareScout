@@ -10,27 +10,19 @@ with fares as (
     select * from {{ ref('stg_fares_historical') }}
 ),
 
--- Weight each fare observation by passenger count so popular price points
--- (e.g. sale fares with high passenger volume) count proportionally.
--- We expand using UNNEST of a repeated sequence — BigQuery supports this.
+-- Aggregate baseline stats per route + quarter
 aggregated as (
     select
         route_origin,
         route_dest,
-        quarter                          as quarter_bucket,
-        percentile_cont(fare_usd, 0.25) over (
-            partition by route_origin, route_dest, quarter
-        )                                as p25_fare_usd,
-        percentile_cont(fare_usd, 0.50) over (
-            partition by route_origin, route_dest, quarter
-        )                                as median_fare_usd,
-        percentile_cont(fare_usd, 0.75) over (
-            partition by route_origin, route_dest, quarter
-        )                                as p75_fare_usd,
-        count(*)                         as sample_size,
-        sum(passengers)                  as total_passengers,
-        min(year)                        as earliest_year,
-        max(year)                        as latest_year
+        quarter as quarter_bucket,
+        approx_quantiles(fare_usd, 100)[offset(25)] as p25_fare_usd,
+        approx_quantiles(fare_usd, 100)[offset(50)] as median_fare_usd,
+        approx_quantiles(fare_usd, 100)[offset(75)] as p75_fare_usd,
+        count(*) as sample_size,
+        sum(passengers) as total_passengers,
+        min(year) as earliest_year,
+        max(year) as latest_year
     from fares
     group by route_origin, route_dest, quarter
 )
