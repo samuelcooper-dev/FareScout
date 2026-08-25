@@ -113,18 +113,19 @@ cd frontend && npm install && npm run dev
 
 ## Roadmap
 
-### Phase 1: Core Data Transformations ✓ In Progress
+### Phase 1: Core Data Transformations ✅ Complete
 - [x] DOT historical bulk load (15.7M rows, 2025 Q1-Q2)
 - [x] BigQuery infrastructure setup (datasets, tables, partitioning)
-- [ ] dbt staging → intermediate → marts models
-- [ ] dbt tests and documentation
-- [ ] Deal-score validation against historical baselines
+- [x] dbt staging → intermediate → marts models
+- [x] dbt tests and documentation
+- [x] Deal-score validation against historical baselines
 
-### Phase 2: Synthetic Live Data Pipeline
-- [ ] Price simulator (realistic variance based on historical patterns)
-- [ ] Synthetic snapshot generation (seasonality, booking window, day-of-week)
-- [ ] Load synthetic snapshots to `raw.price_snapshots`
-- [ ] Incremental dbt models for streaming data
+### Phase 2: Synthetic Live Data Pipeline ✅ Complete
+- [x] Price simulator (realistic variance based on historical patterns)
+- [x] Synthetic snapshot generation (seasonality, booking window, day-of-week)
+- [x] Load synthetic snapshots to `raw.price_snapshots`
+- [x] mart_deal_scores end-to-end pipeline working
+- [ ] Incremental dbt models for streaming data (Phase 5 optimization)
 
 ### Phase 3: Production Orchestration
 - [ ] Airflow local setup
